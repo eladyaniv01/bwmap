@@ -41,7 +41,7 @@ def findbases(maphash):
 @bwmap.command(help='Find & render v2')
 @click.argument('maphash')
 def findbases2(maphash):
-    from .tests.flood import v2
+    from .tests.floods import v2
 
     v2(maphash)
 
