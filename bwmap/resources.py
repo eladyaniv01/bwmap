@@ -18,6 +18,14 @@ MINERAL_SIZE = (2, 1)
 GEYSER_SIZE = (4, 2)
 
 
+def unit_tileset(x, y, w, h):
+    sp = set()
+    for y in range(y, y + h):
+        for x in range(x, x + w):
+            sp.add((x, y))
+    return sp
+
+
 class BaseFinder:
     def __init__(self, game, mm: MapMetrics):
         self.game = game
@@ -25,36 +33,34 @@ class BaseFinder:
         self.FLOOD_DISTANCE = 15 * mm.BWS
 
     def flood_resource_unit(self, u, wall_predicate, max_distance=inf):
-        sp = set()
+        "Fill distances from resource unit"
         bs = self.mm.get_unit_bounds(u)
-        for y in range(bs[2], bs[3]):
-            for x in range(bs[0], bs[1]):
-                sp.add((x, y))
         return flood(
             self.mm.get_map_shape(),
-            sp,
+            unit_tileset(bs[0], bs[2], bs[1] - bs[0], bs[3] - bs[2]),
             wall_predicate,
             max_distance=max_distance,
         )
 
     def flood_base_location(self, btx, bty, wall_predicate, max_distance=inf):
-        sp = set()
-        for y in range(bty * self.mm.BWS, (bty + BASE_SIZE[1]) * self.mm.BWS):
-            for x in range(btx * self.mm.BWS, (btx + BASE_SIZE[0]) * self.mm.BWS):
-                sp.add((x, y))
+        "Fill distances from base location"
         return flood(
             self.mm.get_map_shape(),
-            sp,
+            unit_tileset(*(x * self.mm.BWS for x in (btx, bty, *BASE_SIZE))),
             wall_predicate,
             max_distance=max_distance,
         )
 
     def scoreflood_resource_unit(self, u, wall_predicate):
-        max_dist = self.FLOOD_DISTANCE
-        distances = self.flood_resource_unit(u, wall_predicate, max_distance=max_dist)
-        return np.maximum(u.getResources() * (max_dist - distances), 0)
+        """
+        Transforms distances from resource into resource availability rating.
+        Greater value is better
+        """
+        distances = self.flood_resource_unit(u, wall_predicate, max_distance=self.FLOOD_DISTANCE)
+        return np.maximum(u.getResources() * (self.FLOOD_DISTANCE - distances), 0)
 
     def complete_resource_score(self, iterunits_func, wall_predicate):
+        "Computes normalized [0..1] sum of ratings (scoreflood_resource_unit) for all resource units"
         resource_scores = np.zeros(self.mm.get_map_shape())
         sz = len(iterunits_func())
         for i, u in enumerate(iterunits_func()):
@@ -63,7 +69,10 @@ class BaseFinder:
         return resource_scores / resource_scores.max()
 
     def make_unit_mask(self, scale=None, gap=0):
-        "Make boolean mask with mineral and geyser units marked as True"
+        """
+        Make boolean mask with mineral and geyser units marked as True.
+        Resource units behave as walls for workers.
+        """
         if scale is None:
             scale = self.mm.WS
         shape = self.mm.get_map_shape(scale=scale)
