@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+/pybrood
+/mp.png
+/out.png
+/data/
+/output.txt
