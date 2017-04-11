@@ -1,7 +1,6 @@
 *.pyc
 __pycache__/
 /pybrood
-/mp.png
-/out.png
+/*.png
 /data/
 /output.txt
