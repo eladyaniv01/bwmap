@@ -1,93 +1,21 @@
-from itertools import chain, product
-from typing import Set, Tuple
-from math import sqrt, inf
+from itertools import chain
+from math import inf
 
 import numpy as np
 
 from .metrics import MapMetrics
+from .flood import (
+    flood, filled_mask_from_func, summarize_for_greater_scale,
+    find_locations_for_sized_object, find_maximums
+)
 
 
-SQ2 = sqrt(2)
 MINERAL_IMPORTANCE = 1.0
 GAS_IMPORTANCE = 0.6
 
 BASE_SIZE = (4, 3)
 MINERAL_SIZE = (2, 1)
 GEYSER_SIZE = (4, 2)
-
-
-def next_points(start_points):
-    for x, y in start_points:
-        yield x, y, x + 1,     y, 1.0
-        yield x, y, x - 1,     y, 1.0
-        yield x, y,     x, y + 1, 1.0
-        yield x, y,     x, y - 1, 1.0
-        yield x, y, x + 1, y + 1, SQ2
-        yield x, y, x + 1, y - 1, SQ2
-        yield x, y, x - 1, y + 1, SQ2
-        yield x, y, x - 1, y - 1, SQ2
-
-
-def flood(shape, start_points: Set[Tuple[int, int]], wall_predicate, max_distance=inf):
-    output = np.full(shape, inf)
-    for x, y in start_points:
-        output[y, x] = 0
-
-    while start_points:
-        new_start_points = set()
-        for ox, oy, x, y, dist in next_points(start_points):
-            if x < 0 or y < 0 or y >= shape[0] or x >= shape[1]:
-                continue
-            if wall_predicate(x, y):
-                continue
-            rate = output[oy, ox] + dist
-            if rate > max_distance:
-                continue
-            if rate < output[y, x]:
-                output[y, x] = rate
-                new_start_points.add((x, y))
-        start_points = new_start_points
-
-    return output
-
-
-def filled_mask_from_func(shape, predicate):
-    result = np.empty(shape, dtype=np.bool_)
-    for y in range(shape[0]):
-        for x in range(shape[1]):
-            result[y, x] = predicate(x, y)
-    return result
-
-
-def find_locations_for_sized_object(wallmask, sizex, sizey):
-    shape = wallmask.shape
-    output = np.zeros(shape, dtype=np.bool_)
-    for y in range(shape[0] - sizey):
-        for x in range(shape[1] - sizex):
-            output[y, x] = not wallmask[y:y + sizey, x:x + sizex].any()
-    return np.where(output)
-
-
-def find_extremums(data):
-    mask = np.ones(data.shape, dtype=np.bool_)
-    fwd, back, full = (1, None), (None, -1), (None, None)
-    inversion = {fwd: back, back: fwd, full: full}
-    for ys, xs in product((fwd, back, full), repeat=2):
-        if ys == full and xs == full:
-            continue
-        ms = (slice(*ys), slice(*xs))
-        mask[ms] &= data[ms] >= data[slice(*inversion[ys]), slice(*inversion[xs])]
-    return mask
-
-
-def summarize_for_greater_scale(data, divide):
-    shape = data.shape
-    out_shape = tuple(v // divide for v in shape)
-    output = np.empty(out_shape)
-    for y in range(0, shape[0], divide):
-        for x in range(0, shape[1], divide):
-            output[y // divide, x // divide] = data[y:y + divide, x:x + divide].sum()
-    return output
 
 
 class BaseFinder:
@@ -174,7 +102,7 @@ class BaseFinder:
         for x, y in zip(xc, yc):
             bplace_scores[y, x] = btile_scores[y:y + BASE_SIZE[1], x:x + BASE_SIZE[0]].sum()
 
-        bplace_ext = find_extremums(bplace_scores)
+        bplace_ext = find_maximums(bplace_scores)
         bplace_ext &= bplace_scores > 0
 
         all_resource_units = {}

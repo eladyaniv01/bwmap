@@ -38,5 +38,13 @@ def findbases(maphash):
     render_map(pybrood.game, mm, valid_bases)
 
 
+@bwmap.command(help='Find & render v2')
+@click.argument('maphash')
+def findbases2(maphash):
+    from .tests.flood import v2
+
+    v2(maphash)
+
+
 if __name__ == '__main__':
     bwmap(prog_name='python -m bwmap')
