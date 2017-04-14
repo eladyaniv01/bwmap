@@ -33,6 +33,10 @@ class BaseFinder:
         self.mm = mm
         self.FLOOD_DISTANCE = 10 * mm.BWS
 
+    @staticmethod
+    def res_per_second(distance):
+        return 8 / (4.3 + 0.67 * distance)
+
     def make_unit_mask(self, scale=None, gap=0):
         """
         Make boolean mask with mineral and geyser units marked as True.
@@ -86,7 +90,11 @@ class BaseFinder:
         """
         distances = self.flood_resource_unit(u, max_distance=self.FLOOD_DISTANCE)
         distances[distances <= 0] = inf
-        return np.maximum(u.getResources() * (self.FLOOD_DISTANCE - distances), 0)
+        return np.maximum(
+            self.res_per_second(distances / self.mm.BWS) -
+            self.res_per_second(self.FLOOD_DISTANCE / self.mm.BWS),
+            0
+        )
 
     def all_resource_units_scores(self, iterunits_func):
         "Computes normalized [0..1] sum of ratings (resource_unit_scores) for all resource units"
