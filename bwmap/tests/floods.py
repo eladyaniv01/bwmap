@@ -1,6 +1,9 @@
+from PIL import Image, ImageDraw
+
 from ..metrics import MapMetrics
 from ..resources import BaseFinder
 from ..flood import upscale_matrix, summarize_for_greater_scale
+from ..choke import ChokeFinder
 from .mocks import PybroodMock
 from .render import MapRenderer
 
@@ -36,3 +39,27 @@ def v2(maphash):
     rnd = MapRenderer(pybrood.game, mm)
     rnd.draw_walkable_map(lambda x, y: (int(255 * full_scores[y, x]), int(255 * full_scores[y, x]), 0))
     rnd.im.save('v3.png')
+
+
+def chokes(maphash):
+    pybrood = PybroodMock(maphash)
+    mm = MapMetrics.from_pybrood(pybrood)
+    finder = ChokeFinder(pybrood.game, mm)
+
+    finder()
+
+    PX_SIZE = 4
+
+    walkmap = mm.get_walkability_map()
+
+    im = Image.new('RGB', tuple(x * PX_SIZE for x in walkmap.shape))
+    draw = ImageDraw.Draw(im, 'RGBA')
+    for y in range(walkmap.shape[0]):
+        for x in range(walkmap.shape[1]):
+            color = (200, 200, 200) if walkmap[y, x] else (100, 100, 100)
+            draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + 1) * PX_SIZE, (y + 1) * PX_SIZE), fill=color)
+
+    for x, y, sz in finder.iter_nodes():
+        draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + sz) * PX_SIZE, (y + sz) * PX_SIZE), outline=(0, 0, 0))
+
+    im.save('choke.png')

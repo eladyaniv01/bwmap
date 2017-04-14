@@ -46,5 +46,13 @@ def findbases2(maphash):
     v2(maphash)
 
 
+@bwmap.command(help='Find choke points')
+@click.argument('maphash')
+def chokes(maphash):
+    from .tests.floods import chokes
+
+    chokes(maphash)
+
+
 if __name__ == '__main__':
     bwmap(prog_name='python -m bwmap')
