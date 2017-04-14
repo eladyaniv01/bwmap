@@ -1,6 +1,6 @@
 from ..metrics import MapMetrics
 from ..resources import BaseFinder
-from ..flood import upscale_matrix
+from ..flood import upscale_matrix, summarize_for_greater_scale
 from .mocks import PybroodMock
 from .render import MapRenderer
 
@@ -16,15 +16,12 @@ def v2(maphash):
     mscores = finder.mineral_scoremap()
     gscores = finder.gas_scoremap()
 
-    unbuildable_area_mask = upscale_matrix(~finder.get_possible_base_locations_mask(), mm.BWS)
+    mscores = upscale_matrix(finder.build_place_scores(summarize_for_greater_scale(mscores, mm.BWS)), mm.BWS)
+    gscores = upscale_matrix(finder.build_place_scores(summarize_for_greater_scale(gscores, mm.BWS)), mm.BWS)
 
-    # unbuildable_area_mask = (
-    #     finder.make_unit_mask(gap=3 * mm.BWS) |
-    #     upscale_matrix(~mm.get_builability_map(), mm.BWS)
-    # )
-
-    mscores[unbuildable_area_mask] = 0
-    gscores[unbuildable_area_mask] = 0
+    # unbuildable_area_mask = upscale_matrix(~finder.get_possible_base_locations_mask(), mm.BWS)
+    # mscores[unbuildable_area_mask] = 0
+    # gscores[unbuildable_area_mask] = 0
 
     mscores = mscores / mscores.max()
     gscores = gscores / gscores.max()

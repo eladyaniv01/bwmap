@@ -71,6 +71,7 @@ class BaseFinder:
 
     @lru_cache(1)
     def get_possible_base_locations_mask(self):
+        "Mostly for debug drawing"
         result = np.zeros(self.mm.get_map_shape(scale=self.mm.BS), dtype=np.bool_)
         yc, xc = self.get_possible_base_locations()
         for dy in range(BASE_SIZE[1]):
@@ -132,6 +133,16 @@ class BaseFinder:
             +
             GAS_IMPORTANCE * self.gas_scoremap()
         )
+
+    def build_place_scores(self, scores):
+        yc, xc = self.get_possible_base_locations()
+        result = np.zeros_like(scores)
+        for y, x in zip(yc, xc):
+            result[y, x] = (  # perimeter sum
+                scores[y:y + BASE_SIZE[1], x:x + BASE_SIZE[0]].sum() -
+                scores[y + 1:y + BASE_SIZE[1] - 1, x + 1:x + BASE_SIZE[0] - 1].sum()
+            )
+        return result
 
     def __call__(self):
         resource_scores = self.resource_scoremap()
