@@ -42,7 +42,7 @@ class ChokeFinder:
                     yield from self.iter_nodes(level + 1, x * 2 + dx, y * 2 + dy)
 
 
-class NodeMerger:
+class SameSideNodeMerger:
     def __init__(self, nodelist):
         self.nodes = {i: node for i, node in enumerate(nodelist)}
         self._build_side_index()
@@ -127,7 +127,7 @@ class NodeMerger:
             result = max(result, sx, sy)
         return result
 
-    def merge(self):
+    def __call__(self):
         sz = self._max_node_size()
         while sz >= 1:
             while True:
@@ -137,5 +137,5 @@ class NodeMerger:
                     break
             sz //= 2
 
-    def iter_nodes(self):
-        return self.nodes.values()
+    def __iter__(self):
+        return iter(self.nodes.values())
