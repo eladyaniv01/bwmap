@@ -108,11 +108,11 @@ class NodeMerger:
             self._grow_right(key, id2, side2, id1, side1)
         return True
 
-    def _merge_step(self):
+    def _merge_step(self, min_side_size):
         keys = []
         for key, ids in self.side_index.items():
             assert len(ids) in (0, 1, 2)
-            if len(ids) == 2:
+            if len(ids) == 2 and key[3] >= min_side_size:
                 keys.append(key)
 
         count = 0
@@ -121,10 +121,21 @@ class NodeMerger:
                 count += 1
         return count
 
+    def _max_node_size(self):
+        result = 0
+        for x, y, sx, sy in self.nodes.values():
+            result = max(result, sx, sy)
+        return result
+
     def merge(self):
-        while True:
-            if self._merge_step() == 0:
-                break
+        sz = self._max_node_size()
+        while sz >= 1:
+            while True:
+                count = self._merge_step(sz)
+                print(sz, count)
+                if count == 0:
+                    break
+            sz //= 2
 
     def iter_nodes(self):
         return self.nodes.values()
