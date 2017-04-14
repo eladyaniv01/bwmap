@@ -110,3 +110,17 @@ def summarize_for_greater_scale(data: np.ndarray, divide: int) -> np.ndarray:
         for x in range(0, shape[1], divide):
             output[y // divide, x // divide] = data[y:y + divide, x:x + divide].sum()
     return output
+
+
+def upscale_matrix(data: np.ndarray, n: int) -> np.ndarray:
+    result = np.empty(tuple(x * n for x in data.shape), dtype=data.dtype)
+    for y in range(data.shape[0]):
+        yy = y * n
+        for x in range(data.shape[1]):
+            xx = x * n
+            result[yy:yy + n, xx:xx + n] = data[y, x]
+    return result
+
+
+def make_predicate(data: np.ndarray) -> Callable[[int, int], bool]:
+    return lambda x, y: data[y, x]

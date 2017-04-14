@@ -7,7 +7,8 @@ import numpy as np
 from .metrics import MapMetrics
 from .flood import (
     flood, summarize_for_greater_scale,
-    find_locations_for_sized_object, find_maximums
+    find_locations_for_sized_object, find_maximums,
+    make_predicate
 )
 
 
@@ -55,14 +56,28 @@ class BaseFinder:
         return result
 
     @lru_cache(1)
-    def get_walkable_wall_predicate(self):
-        uwm = self.make_unit_mask() | ~self.mm.get_walkability_map()
-        return lambda x, y: uwm[y, x]
+    def get_walkable_wall_mask(self):
+        return self.make_unit_mask() | ~self.mm.get_walkability_map()
 
     @lru_cache(1)
-    def get_buildable_wall_predicate(self):
-        uwm = self.make_unit_mask(scale=self.mm.BS, gap=3) | ~self.mm.get_builability_map()
-        return lambda x, y: uwm[y, x]
+    def get_buildable_wall_mask(self):
+        return self.make_unit_mask(scale=self.mm.BS, gap=3) | ~self.mm.get_builability_map()
+
+    @lru_cache(1)
+    def get_possible_base_locations(self):
+        yc, xc = find_locations_for_sized_object(
+            self.get_buildable_wall_mask(), *BASE_SIZE)
+        return yc, xc
+
+    @lru_cache(1)
+    def get_possible_base_locations_mask(self):
+        result = np.zeros(self.mm.get_map_shape(scale=self.mm.BS), dtype=np.bool_)
+        yc, xc = self.get_possible_base_locations()
+        for dy in range(BASE_SIZE[1]):
+            ycc = yc + dy
+            for dx in range(BASE_SIZE[0]):
+                result[ycc, xc + dx] = True
+        return result
 
     def flood_resource_unit(self, u, max_distance=inf):
         "Fill distances from resource unit"
@@ -70,7 +85,7 @@ class BaseFinder:
         return flood(
             self.mm.get_map_shape(),
             unit_tileset(bs[0], bs[2], bs[1] - bs[0], bs[3] - bs[2]),
-            self.get_walkable_wall_predicate(),
+            make_predicate(self.get_walkable_wall_mask()),
             max_distance=max_distance,
         )
 
@@ -119,12 +134,10 @@ class BaseFinder:
         )
 
     def __call__(self):
-        wall_predicate = self.get_walkable_wall_predicate()
         resource_scores = self.resource_scoremap()
 
-        wallm = self.get_buildable_wall_predicate()
         btile_scores = summarize_for_greater_scale(resource_scores, self.mm.BWS)
-        yc, xc = find_locations_for_sized_object(wallm, *BASE_SIZE)
+        yc, xc = self.get_possible_base_locations()
         bplace_scores = np.zeros_like(btile_scores)
         for x, y in zip(xc, yc):
             bplace_scores[y, x] = btile_scores[y:y + BASE_SIZE[1], x:x + BASE_SIZE[0]].sum()
@@ -148,7 +161,9 @@ class BaseFinder:
         possible_bases.sort(key=lambda x: -x[2])
         valid_bases = {}
         for i, (btx, bty, base_score) in enumerate(possible_bases):
-            base_distances = self.flood_base_location(btx, bty, wall_predicate, max_distance=self.FLOOD_DISTANCE)
+            base_distances = self.flood_base_location(
+                btx, bty, make_predicate(self.get_walkable_wall_mask()),
+                max_distance=self.FLOOD_DISTANCE)
 
             resources_to_pop = set()
             for ruid in all_resource_units.keys():
