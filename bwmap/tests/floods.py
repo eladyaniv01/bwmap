@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw
 from ..metrics import MapMetrics
 from ..resources import BaseFinder
 from ..flood import upscale_matrix, summarize_for_greater_scale
-from ..choke import ChokeFinder
+from ..choke import ChokeFinder, NodeMerger
 from .mocks import PybroodMock
 from .render import MapRenderer
 
@@ -59,7 +59,10 @@ def chokes(maphash):
             color = (200, 200, 200) if walkmap[y, x] else (100, 100, 100)
             draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + 1) * PX_SIZE, (y + 1) * PX_SIZE), fill=color)
 
-    for x, y, sz in finder.iter_nodes():
-        draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + sz) * PX_SIZE, (y + sz) * PX_SIZE), outline=(0, 0, 0))
+    merger = NodeMerger(finder.iter_nodes())
+    merger.merge()
+
+    for x, y, szx, szy in merger.iter_nodes():
+        draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + szx) * PX_SIZE, (y + szy) * PX_SIZE), outline=(0, 0, 0))
 
     im.save('choke.png')
