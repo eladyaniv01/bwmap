@@ -167,7 +167,7 @@ class GrowthNodeMerger(BaseNodeMerger):
             my = max(my, y + sy)
         self.mx, self.my = mx, my
 
-        self.map = np.full((mx, my), self.WALL_ID, dtype=np.int_)
+        self.map = np.full((my, mx), self.WALL_ID, dtype=np.int_)
         self.areas = {}
         for nid in self.nodes.keys():
             self._place_node(nid, check=False)
@@ -266,8 +266,8 @@ class GrowthNodeMerger(BaseNodeMerger):
 
     _PRECHECK = [
         lambda x, y, sx, sy, mx, my: y > 0,
-        lambda x, y, sx, sy, mx, my: x + sx < mx - 1,
-        lambda x, y, sx, sy, mx, my: y + sy < my - 1,
+        lambda x, y, sx, sy, mx, my: x + sx < mx,
+        lambda x, y, sx, sy, mx, my: y + sy < my,
         lambda x, y, sx, sy, mx, my: x > 0,
     ]
     _SLICES = [
@@ -337,9 +337,30 @@ class GrowthNodeMerger(BaseNodeMerger):
             while self._grow_side(nid, side):
                 pass
 
-    def __call__(self):
-        for i, area in sorted(self.areas.items(), key=lambda x: x[1], reverse=True):
-            if i not in self.nodes:
+    def _find_max_area_chunk(self, worked):
+        max_area, result = 0, None
+        for i, area in self.areas.items():
+            if i in worked:
                 continue
-            print(i, area)
+            if area > max_area:
+                result = i
+                max_area = area
+        return result
+
+    def _rechecker(self):
+        check_map = np.full((self.my, self.mx), self.WALL_ID, dtype=np.int_)
+        for i, (x, y, sx, sy) in self.nodes.items():
+            assert (check_map[y:y + sy, x:x + sx] == self.WALL_ID).all()
+            check_map[y:y + sy, x:x + sx] = i
+
+    def __call__(self):
+        worked = set()
+        while True:
+            i = self._find_max_area_chunk(worked)
+            if i is None:
+                break
             self._grow_node(i)
+            x, y, sx, sy = self.nodes[i]
+            self.map[y:y + sy, x:x + sx] = self.WALL_ID
+            worked.add(i)
+        self._rechecker()
