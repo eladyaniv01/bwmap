@@ -42,11 +42,25 @@ class ChokeFinder:
                     yield from self.iter_nodes(level + 1, x * 2 + dx, y * 2 + dy)
 
 
-class SameSideNodeMerger:
-    def __init__(self, nodelist):
-        self.nodes = {i: node for i, node in enumerate(nodelist)}
-        self._build_side_index()
+class BaseNodeMerger:
+    WALL_ID = 0
+    EMPTY_ID = 1
 
+    def __init__(self, nodelist):
+        self.nodes = {i: node for i, node in enumerate(nodelist, start=2)}
+        self._prepare()
+
+    def _prepare(self):
+        pass
+
+    def __call__(self):
+        raise NotImplementedError
+
+    def __iter__(self):
+        return iter(self.nodes.values())
+
+
+class SameSideNodeMerger(BaseNodeMerger):
     @staticmethod
     def _node_sides(node):
         x, y, szx, szy = node
@@ -67,7 +81,7 @@ class SameSideNodeMerger:
         for side, key in self._node_sides(node):
             self.side_index[key].remove((nid, side))
 
-    def _build_side_index(self):
+    def _prepare(self):
         self.side_index = defaultdict(lambda: set())
         for i, node in self.nodes.items():
             self._push_node_sides(i, node)
@@ -137,5 +151,218 @@ class SameSideNodeMerger:
                     break
             sz //= 2
 
-    def __iter__(self):
-        return iter(self.nodes.values())
+
+class GrowthNodeMerger(BaseNodeMerger):
+    def _place_node(self, nid, check=True):
+        x, y, sx, sy = self.nodes[nid]
+        if check:
+            assert (self.map[y:y + sy, x:x + sx] == self.EMPTY_ID).all()
+        self.map[y:y + sy, x:x + sx] = nid
+        self.areas[nid] = sx * sy
+
+    def _prepare(self):
+        mx, my = 0, 0
+        for x, y, sx, sy in self.nodes.values():
+            mx = max(mx, x + sx)
+            my = max(my, y + sy)
+        self.mx, self.my = mx, my
+
+        self.map = np.full((mx, my), self.WALL_ID, dtype=np.int_)
+        self.areas = {}
+        for nid in self.nodes.keys():
+            self._place_node(nid, check=False)
+
+        self.new_id = len(self.nodes)
+
+    def _allocate_id(self):
+        self.new_id += 1
+        return self.new_id
+
+    def _clear_node_map(self, nid):
+        x, y, sx, sy = self.nodes[nid]
+        self.map[y:y + sy, x:x + sx] = self.EMPTY_ID
+
+    def _remove_node(self, nid):
+        self._clear_node_map(nid)
+        del self.nodes[nid]
+        del self.areas[nid]
+
+    def _split2_node(self, nid, vert: bool, coord: int):
+        """
+        Returned ids:
+        [top, bottom]
+        or
+        [left, right]
+        """
+        x, y, sx, sy = self.nodes[nid]
+        if vert:
+            assert x < coord < x + sx
+        else:
+            assert y < coord < y + sy
+
+        self._remove_node(nid)
+        ids = [self._allocate_id() for _ in range(2)]
+
+        if vert:
+            self.nodes[ids[0]] = x, y, coord - x, sy
+            self.nodes[ids[1]] = coord, y, sx - (coord - x), sy
+        else:
+            self.nodes[ids[0]] = x, y, x, coord - y
+            self.nodes[ids[1]] = x, coord, sx, sy - (coord - y)
+
+        for i in ids:
+            self._place_node(i)
+        return ids
+
+    def _split4_node(self, nid, splitx: int, splity: int):
+        """
+        Returned ids:
+        [top-left, top-right, bottom-right, bottom-left]
+        """
+        x, y, sx, sy = self.nodes[nid]
+        assert x <= splitx <= x + sx, '{} < {} < {}'.format(x, splitx, x + sx)
+        assert y <= splity <= y + sy
+
+        self._remove_node(nid)
+        ids = [self._allocate_id() for _ in range(4)]
+
+        s1x, s1y = splitx - x, splity - y
+        s2x = sx - (splitx - x)
+        s2y = sy - (splity - y)
+
+        self.nodes[ids[0]] = x, y, s1x, s1y
+        self.nodes[ids[1]] = splitx, y, s2x, s1y
+        self.nodes[ids[2]] = splitx, splity, s2x, s2y
+        self.nodes[ids[3]] = x, splity, s1x, s2y
+
+        for i in ids:
+            self._place_node(i)
+        return ids
+
+    def _cut_node(self, nid, side, amount):
+        self._clear_node_map(nid)
+        x, y, sx, sy = self.nodes[nid]
+
+        if amount >= sy if side in (0, 2) else amount >= sx:
+            del self.nodes[nid]
+            return
+
+        if side == 0:
+            y += amount
+        elif side == 3:
+            x += amount
+
+        if side in (0, 2):
+            sy -= amount
+        else:
+            sx -= amount
+
+        self.nodes[nid] = x, y, sx, sy
+        self._place_node(nid)
+
+    @staticmethod
+    def _is_range_in(a1, b1, a2, b2):
+        "1 inside 2"
+        assert a1 < b1
+        assert a2 < b2
+        return (
+            a2 <= a1 <= b2 and
+            a2 <= b1 <= b2
+        )
+
+    @classmethod
+    def _get_split_side(cls, side, a1, b1, a2, b2):
+        "1 - to be splitted, 2 - intruding shape"
+        assert a1 < b1
+        assert a2 < b2
+        straight = side < 2
+        if cls._is_range_in(a1, b1, a2, b2):
+            return 'inside'
+        if b1 <= b2:
+            return 'left' if straight else 'right'
+        if a1 >= a2:
+            return 'right' if straight else 'left'
+        return 'both'
+
+    _PRECHECK = [
+        lambda x, y, sx, sy, mx, my: y > 0,
+        lambda x, y, sx, sy, mx, my: x + sx < mx - 1,
+        lambda x, y, sx, sy, mx, my: y + sy < my - 1,
+        lambda x, y, sx, sy, mx, my: x > 0,
+    ]
+    _SLICES = [
+        lambda x, y, sx, sy: (slice(y - 1, y), slice(x, x + sx)),
+        lambda x, y, sx, sy: (slice(y, y + sy), slice(x + sx, x + sx + 1)),
+        lambda x, y, sx, sy: (slice(y + sy, y + sy + 1), slice(x, x + sx)),
+        lambda x, y, sx, sy: (slice(y, y + sy), slice(x - 1, x)),
+    ]
+    _LEFT = [
+        lambda x, y, sx, sy: (x, y - 1),
+        lambda x, y, sx, sy: (x + sx + 1, y),
+        lambda x, y, sx, sy: (x + sx, y + sy + 1),
+        lambda x, y, sx, sy: (x - 1, y + sy),
+    ]
+    _RIGHT = [
+        lambda x, y, sx, sy: (x + sx, y - 1),
+        lambda x, y, sx, sy: (x + sx + 1, y + sy),
+        lambda x, y, sx, sy: (x, y + sy + 1),
+        lambda x, y, sx, sy: (x - 1, y),
+    ]
+    _AFTER = [
+        lambda x, y, sx, sy: (x, y - 1, sx, sy + 1),
+        lambda x, y, sx, sy: (x, y, sx + 1, sy),
+        lambda x, y, sx, sy: (x, y, sx, sy + 1),
+        lambda x, y, sx, sy: (x - 1, y, sx + 1, sy),
+    ]
+
+    def _grow_side(self, nid, side):
+        node = self.nodes[nid]
+        if not self._PRECHECK[side](*node, self.mx, self.my):
+            return False
+        map_chunk = self.map[self._SLICES[side](*node)]
+        if (map_chunk == self.WALL_ID).any():
+            return False
+
+        self._clear_node_map(nid)
+        affected_ids = np.unique(map_chunk)
+        vert = side % 2
+        for i in affected_ids:
+            target = self.nodes[i]
+            smode = self._get_split_side(
+                side,
+                target[vert], target[vert] + target[2 + vert],
+                node[vert], node[vert] + node[2 + vert],
+            )
+            if smode != 'inside':
+                print(side, node, target, smode)
+            if smode == 'inside':
+                self._cut_node(i, (side + 2) % 4, 1)
+            elif smode == 'left':
+                ids = self._split4_node(i, *self._LEFT[side](*node))
+                self._remove_node(ids[(side + 2) % 4])
+            elif smode == 'right':
+                ids = self._split4_node(i, *self._RIGHT[side](*node))
+                self._remove_node(ids[(side + 3) % 4])
+            elif smode == 'both':
+                ids = self._split4_node(i, *self._LEFT[side](*node))
+                self._cut_node(ids[(side + 2) % 4], (side + 3) % 4, node[2 + vert])
+
+        self.nodes[nid] = self._AFTER[side](*node)
+        try:
+            self._place_node(nid)
+        except AssertionError:
+            print(map_chunk)
+            raise
+        return True
+
+    def _grow_node(self, nid):
+        for side in range(4):
+            while self._grow_side(nid, side):
+                pass
+
+    def __call__(self):
+        for i, area in sorted(self.areas.items(), key=lambda x: x[1], reverse=True):
+            if i not in self.nodes:
+                continue
+            print(i, area)
+            self._grow_node(i)
