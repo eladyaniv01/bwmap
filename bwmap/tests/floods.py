@@ -71,25 +71,27 @@ def node_merge(maphash):
 
 
 def chokes(maphash):
-    from ..flood import wall_distances
+    from ..flood import wall_distances, detect_walls
 
     pybrood = PybroodMock(maphash)
     mm = MapMetrics.from_pybrood(pybrood)
 
-    walldist = wall_distances(mm.get_walkability_map())
-    print(walldist.max())
+    walldist = wall_distances(~mm.get_walkability_map())
     walldist = walldist / walldist.max()
+
+    thinwalls = detect_walls(~mm.get_walkability_map())
 
     PX_SIZE = 4
     im = Image.new('RGB', tuple(reversed([x * PX_SIZE for x in walldist.shape])))
     draw = ImageDraw.Draw(im, 'RGBA')
     for y in range(walldist.shape[0]):
         for x in range(walldist.shape[1]):
-            if walldist[y, x] == 0:
-                color = (0, 0, 0)
-            else:
-                color = int(walldist[y, x] * 200 + 50)
-                color = (color, color, color)
+            # if walldist[y, x] == 0:
+            #     color = 0
+            # else:
+            #     color = int(walldist[y, x] * 200 + 50)
+            color = 255 if thinwalls[y, x] else 0
+            color = (color, color, color)
             draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + 1) * PX_SIZE, (y + 1) * PX_SIZE), fill=color)
 
     im.save('walldist.png')

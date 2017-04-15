@@ -126,9 +126,9 @@ def make_predicate(data: np.ndarray) -> Callable[[int, int], bool]:
     return lambda x, y: data[y, x]
 
 
-def wall_distances(wallmap: np.ndarray):
+def wall_distances(wallmap: np.ndarray) -> np.ndarray:
     walldist = np.full(wallmap.shape, inf, dtype=np.float_)
-    walldist[~wallmap] = 0
+    walldist[wallmap] = 0
 
     while True:
         fwd, back, full = (1, None), (None, -1), (None, None)
@@ -147,3 +147,17 @@ def wall_distances(wallmap: np.ndarray):
             break
 
     return walldist
+
+
+def detect_walls(wallmap: np.ndarray) -> np.ndarray:
+    fwd, back, full = (1, None), (None, -1), (None, None)
+    inversion = {fwd: back, back: fwd, full: full}
+    result = ~wallmap
+    for ys, xs in product((fwd, back, full), repeat=2):
+        if ys == full and xs == full:
+            continue
+        if ys != full and xs != full:
+            continue
+        ms = (slice(*ys), slice(*xs))
+        result[ms] |= ~wallmap[slice(*inversion[ys]), slice(*inversion[xs])]
+    return result & wallmap
