@@ -42,15 +42,20 @@ def findbases(maphash):
 @click.argument('maphash')
 def findbases2(maphash):
     from .tests.floods import v2
-
     v2(maphash)
+
+
+@bwmap.command(help='Node merging algorithm')
+@click.argument('maphash')
+def nodemerge(maphash):
+    from .tests.floods import node_merge
+    node_merge(maphash)
 
 
 @bwmap.command(help='Find choke points')
 @click.argument('maphash')
 def chokes(maphash):
     from .tests.floods import chokes
-
     chokes(maphash)
 
 

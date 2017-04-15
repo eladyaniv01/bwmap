@@ -124,3 +124,27 @@ def upscale_matrix(data: np.ndarray, n: int) -> np.ndarray:
 
 def make_predicate(data: np.ndarray) -> Callable[[int, int], bool]:
     return lambda x, y: data[y, x]
+
+
+def wall_distances(wallmap: np.ndarray):
+    walldist = np.full(wallmap.shape, inf, dtype=np.float_)
+    walldist[~wallmap] = 0
+
+    while True:
+        fwd, back, full = (1, None), (None, -1), (None, None)
+        inversion = {fwd: back, back: fwd, full: full}
+        for ys, xs in product((fwd, back, full), repeat=2):
+            if ys != full and xs != full:
+                continue
+            if ys == full and xs == full:
+                continue
+            ms = (slice(*ys), slice(*xs))
+            walldist[ms] = np.minimum(
+                walldist[ms],
+                walldist[slice(*inversion[ys]), slice(*inversion[xs])] + 1
+            )
+
+        if inf not in walldist:
+            break
+
+    return walldist

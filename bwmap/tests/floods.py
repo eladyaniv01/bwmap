@@ -1,14 +1,14 @@
 from PIL import Image, ImageDraw
 
 from ..metrics import MapMetrics
-from ..resources import BaseFinder
-from ..flood import upscale_matrix, summarize_for_greater_scale
-from ..choke import ChokeFinder, SameSideNodeMerger, GrowthNodeMerger
 from .mocks import PybroodMock
 from .render import MapRenderer
 
 
 def v2(maphash):
+    from ..resources import BaseFinder
+    from ..flood import upscale_matrix, summarize_for_greater_scale
+
     pybrood = PybroodMock(maphash)
     mm = MapMetrics.from_pybrood(pybrood)
     finder = BaseFinder(pybrood.game, mm)
@@ -41,7 +41,9 @@ def v2(maphash):
     rnd.im.save('v3.png')
 
 
-def chokes(maphash):
+def node_merge(maphash):
+    from ..choke import ChokeFinder, GrowthNodeMerger
+
     pybrood = PybroodMock(maphash)
     mm = MapMetrics.from_pybrood(pybrood)
     finder = ChokeFinder(pybrood.game, mm)
@@ -52,7 +54,7 @@ def chokes(maphash):
 
     walkmap = mm.get_walkability_map()
 
-    im = Image.new('RGB', tuple(x * PX_SIZE for x in walkmap.shape))
+    im = Image.new('RGB', tuple(reversed([x * PX_SIZE for x in walkmap.shape])))
     draw = ImageDraw.Draw(im, 'RGBA')
     for y in range(walkmap.shape[0]):
         for x in range(walkmap.shape[1]):
@@ -66,3 +68,28 @@ def chokes(maphash):
         draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + szx) * PX_SIZE, (y + szy) * PX_SIZE), outline=(0, 0, 0))
 
     im.save('choke.png')
+
+
+def chokes(maphash):
+    from ..flood import wall_distances
+
+    pybrood = PybroodMock(maphash)
+    mm = MapMetrics.from_pybrood(pybrood)
+
+    walldist = wall_distances(mm.get_walkability_map())
+    print(walldist.max())
+    walldist = walldist / walldist.max()
+
+    PX_SIZE = 4
+    im = Image.new('RGB', tuple(reversed([x * PX_SIZE for x in walldist.shape])))
+    draw = ImageDraw.Draw(im, 'RGBA')
+    for y in range(walldist.shape[0]):
+        for x in range(walldist.shape[1]):
+            if walldist[y, x] == 0:
+                color = (0, 0, 0)
+            else:
+                color = walldist[y, x] * 200 + 50
+                color = (int(color), int(color), int(color))
+            draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + 1) * PX_SIZE, (y + 1) * PX_SIZE), fill=color)
+
+    im.save('walldist.png')
