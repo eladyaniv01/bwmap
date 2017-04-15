@@ -172,7 +172,7 @@ class GrowthNodeMerger(BaseNodeMerger):
         for nid in self.nodes.keys():
             self._place_node(nid, check=False)
 
-        self.new_id = len(self.nodes)
+        self.new_id = len(self.nodes) + 5
 
     def _allocate_id(self):
         self.new_id += 1
@@ -181,38 +181,15 @@ class GrowthNodeMerger(BaseNodeMerger):
     def _clear_node_map(self, nid):
         x, y, sx, sy = self.nodes[nid]
         self.map[y:y + sy, x:x + sx] = self.EMPTY_ID
+        # y, x = np.where(self.map == nid)
+        # assert len(y) == 0
+        # assert len(x) == 0
 
     def _remove_node(self, nid):
         self._clear_node_map(nid)
         del self.nodes[nid]
         del self.areas[nid]
-
-    def _split2_node(self, nid, vert: bool, coord: int):
-        """
-        Returned ids:
-        [top, bottom]
-        or
-        [left, right]
-        """
-        x, y, sx, sy = self.nodes[nid]
-        if vert:
-            assert x < coord < x + sx
-        else:
-            assert y < coord < y + sy
-
-        self._remove_node(nid)
-        ids = [self._allocate_id() for _ in range(2)]
-
-        if vert:
-            self.nodes[ids[0]] = x, y, coord - x, sy
-            self.nodes[ids[1]] = coord, y, sx - (coord - x), sy
-        else:
-            self.nodes[ids[0]] = x, y, x, coord - y
-            self.nodes[ids[1]] = x, coord, sx, sy - (coord - y)
-
-        for i in ids:
-            self._place_node(i)
-        return ids
+        self.stats['remove'].add(nid)
 
     def _split4_node(self, nid, splitx: int, splity: int):
         """
@@ -224,6 +201,7 @@ class GrowthNodeMerger(BaseNodeMerger):
         assert y <= splity <= y + sy
 
         self._remove_node(nid)
+        self.stats['split_remove'].add(nid)
         ids = [self._allocate_id() for _ in range(4)]
 
         s1x, s1y = splitx - x, splity - y
@@ -239,12 +217,21 @@ class GrowthNodeMerger(BaseNodeMerger):
             self._place_node(i)
         return ids
 
+    def _cleanup_empty_nodes(self, ids):
+        for i in ids:
+            if i not in self.nodes:
+                continue
+            if self.areas[i] == 0:
+                self.stats['null_area'].add(i)
+                self._remove_node(i)
+
     def _cut_node(self, nid, side, amount):
         self._clear_node_map(nid)
         x, y, sx, sy = self.nodes[nid]
 
         if amount >= sy if side in (0, 2) else amount >= sx:
-            del self.nodes[nid]
+            self._remove_node(nid)
+            self.stats['cut_node'].add(nid)
             return
 
         if side == 0:
@@ -327,32 +314,38 @@ class GrowthNodeMerger(BaseNodeMerger):
         affected_ids = np.unique(map_chunk)
         vert = side % 2
         for i in affected_ids:
-            target = self.nodes[i]
+            try:
+                target = self.nodes[i]
+            except KeyError:
+                print(np.where(self.map == i))
+                print({k: i in self.stats[k] for k in self.stats.keys()})
+                raise
             smode = self._get_split_side(
                 side,
                 target[vert], target[vert] + target[2 + vert],
                 node[vert], node[vert] + node[2 + vert],
             )
-            if smode != 'inside':
-                print(side, node, target, smode)
             if smode == 'inside':
                 self._cut_node(i, (side + 2) % 4, 1)
             elif smode == 'left':
                 ids = self._split4_node(i, *self._LEFT[side](*node))
                 self._remove_node(ids[(side + 2) % 4])
+                self.stats['left_remove'].add(ids[(side + 2) % 4])
+                self._cleanup_empty_nodes(ids)
             elif smode == 'right':
                 ids = self._split4_node(i, *self._RIGHT[side](*node))
                 self._remove_node(ids[(side + 3) % 4])
+                self.stats['right_remove'].add(ids[(side + 3) % 4])
+                self._cleanup_empty_nodes(ids)
             elif smode == 'both':
                 ids = self._split4_node(i, *self._LEFT[side](*node))
                 self._cut_node(ids[(side + 2) % 4], (side + 3) % 4, node[2 + vert])
+                self.stats['both_cut'].add(ids[(side + 2) % 4])
+                self._cleanup_empty_nodes(ids)
+            self.stats[smode].add(i)
 
         self.nodes[nid] = self._AFTER[side](*node)
-        try:
-            self._place_node(nid)
-        except AssertionError:
-            print(map_chunk)
-            raise
+        self._place_node(nid)
         return True
 
     def _grow_node(self, nid):
@@ -361,6 +354,7 @@ class GrowthNodeMerger(BaseNodeMerger):
                 pass
 
     def __call__(self):
+        self.stats = defaultdict(lambda: set())
         for i, area in sorted(self.areas.items(), key=lambda x: x[1], reverse=True):
             if i not in self.nodes:
                 continue
