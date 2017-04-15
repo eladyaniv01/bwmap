@@ -88,8 +88,8 @@ def chokes(maphash):
             if walldist[y, x] == 0:
                 color = (0, 0, 0)
             else:
-                color = walldist[y, x] * 200 + 50
-                color = (int(color), int(color), int(color))
+                color = int(walldist[y, x] * 200 + 50)
+                color = (color, color, color)
             draw.rectangle((x * PX_SIZE, y * PX_SIZE, (x + 1) * PX_SIZE, (y + 1) * PX_SIZE), fill=color)
 
     im.save('walldist.png')

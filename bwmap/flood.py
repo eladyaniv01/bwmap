@@ -134,14 +134,13 @@ def wall_distances(wallmap: np.ndarray):
         fwd, back, full = (1, None), (None, -1), (None, None)
         inversion = {fwd: back, back: fwd, full: full}
         for ys, xs in product((fwd, back, full), repeat=2):
-            if ys != full and xs != full:
-                continue
             if ys == full and xs == full:
                 continue
+            dist = SQ2 if ys != full and xs != full else 1
             ms = (slice(*ys), slice(*xs))
             walldist[ms] = np.minimum(
                 walldist[ms],
-                walldist[slice(*inversion[ys]), slice(*inversion[xs])] + 1
+                walldist[slice(*inversion[ys]), slice(*inversion[xs])] + dist
             )
 
         if inf not in walldist:
